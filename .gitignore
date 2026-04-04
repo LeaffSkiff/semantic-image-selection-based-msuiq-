@@ -35,7 +35,6 @@ ENV/
 
 # Datasets and images
 datasets/
-selected_images/
 
 # Model weights and checkpoints
 *.pth

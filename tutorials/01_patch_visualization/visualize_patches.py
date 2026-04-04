@@ -18,7 +18,7 @@ from PIL import Image
 from pyiqa.data.multiscale_trans_util import get_multiscale_patches, resize_preserve_aspect_ratio
 
 # ================= 配置 =================
-img_path = r".\selected_images\img.png"  # 改成你的图片路径
+img_path = r".\images\img.png"  # 图片路径：tutorials/images/img.png
 patch_size = 32
 longer_side_lengths = [224, 384]  # 两个缩放尺度
 max_seq_len_from_original_res = -1  # -1 表示使用原始图的所有 patch

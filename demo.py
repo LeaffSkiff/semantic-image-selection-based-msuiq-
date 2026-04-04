@@ -7,7 +7,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 # ====== 配置 ======
-img_path = ".\selected_images\img.png"   # 改成你的图片路径
+img_path = r"..\..\images\img.png"   # 改成你的图片路径
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ====== 加载 MUSIQ 模型 ======

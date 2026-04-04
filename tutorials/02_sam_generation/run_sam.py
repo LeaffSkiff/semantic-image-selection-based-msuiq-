@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # ================= 配置 =================
-img_path = r".\images\img.png"  # 改成你的图片路径
+img_path = r".\images\img.png"  # 图片路径：tutorials/images/img.png
 TOP_K = 5  # 只保留前 5 个最大的 mask
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
