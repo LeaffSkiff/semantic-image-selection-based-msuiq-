@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # ================= 配置 =================
-img_path = r".\images\img.png"  # 图片路径：tutorials/images/img.png
+img_path = r".\tutorials\images\img.png"  # 图片路径：tutorials/images/img.png
 TOP_K = 5  # 只保留前 5 个最大的 mask
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -210,8 +210,8 @@ for i, idx in enumerate(top_k_indices):
     ax.axis("off")
 
 plt.tight_layout()
-plt.savefig("sam_masks_visualization.png", dpi=150, bbox_inches='tight')
-print("可视化已保存到：sam_masks_visualization.png")
+plt.savefig(r".\tutorials\outputImg\sam_masks_visualization.png", dpi=150, bbox_inches='tight')
+print(r"可视化已保存到：.\tutorials\outputImg\sam_masks_visualization.png")
 print()
 
 # ================= 保存 mask 数据 =================
@@ -228,7 +228,7 @@ output_data = {
 }
 
 import pickle
-with open("sam_masks.pkl", "wb") as f:
+with open(r"tutorials\02_sam_generation\sam_masks.pkl", "wb") as f:
     pickle.dump(output_data, f)
 
 print(f"已保存 {TOP_K} 个 mask 到 sam_masks.pkl")

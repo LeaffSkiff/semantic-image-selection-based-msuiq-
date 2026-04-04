@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 import pickle
 
 # ================= 配置 =================
-img_path = r".\images\img.png"  # 图片路径：tutorials/images/img.png
-mask_path = r"..\\02_sam_generation\sam_masks.pkl"  # SAM 输出的 mask 数据（来自阶段 2）
+img_path = r".\tutorials\images\img.png"  # 图片路径：tutorials/images/img.png
+mask_path = r".\tutorials\02_sam_generation\sam_masks.pkl"  # SAM 输出的 mask 数据（来自阶段 2）
 patch_size = 32
 longer_side_lengths = [224, 384]
 TOP_K = 5  # 与 run_sam.py 保持一致
@@ -189,7 +189,7 @@ output_data = {
     'K': K,
 }
 
-with open("semantic_vectors.pkl", "wb") as f:
+with open(r"tutorials\03_overlap_computation\semantic_vectors.pkl", "wb") as f:
     pickle.dump(output_data, f)
 
 print(f"已保存到 semantic_vectors.pkl")
@@ -252,8 +252,8 @@ for scale_idx in range(min(3, len(scale_info))):
     plt.colorbar(im, ax=ax)
 
 plt.tight_layout()
-plt.savefig("patch_mask_overlap_visualization.png", dpi=150, bbox_inches='tight')
-print("可视化已保存到：patch_mask_overlap_visualization.png")
+plt.savefig(r".\tutorials\outputImg\patch_mask_overlap_visualization.png", dpi=150, bbox_inches='tight')
+print(r"可视化已保存到：.\tutorials\outputImg\patch_mask_overlap_visualization.png")
 
 # ================= 打印示例语义向量 =================
 print("\n" + "=" * 60)
