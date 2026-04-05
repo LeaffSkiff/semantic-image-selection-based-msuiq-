@@ -256,13 +256,25 @@ class TransformerEncoder(nn.Module):
             )
 
     def forward(
-        self, x, inputs_spatial_positions, inputs_scale_positions, inputs_masks
+        self, x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_embeddings=None
     ):
+        '''
+        Where was it modified?
+
+        Add new parameter semantic_embedding. If it's not None, add it with x.
+
+        Args:
+            semantic_embeddings: The semantic vector of each patch itself
+        '''
         n, _, c = x.shape
 
         x = self.posembed_input(x, inputs_spatial_positions)
         if self.use_scale_emb:
             x = self.scaleembed_input(x, inputs_scale_positions)
+
+        # Added: Semantic embedding integration (if provided).
+        if semantic_embeddings is not None:
+            x = x + semantic_embeddings
 
         cls_token = self.cls.repeat(n, 1, 1)
         x = torch.cat([cls_token, x], dim=1)
@@ -393,8 +405,12 @@ class MUSIQ(nn.Module):
         if pretrained_model_path is not None:
             load_pretrained_network(self, pretrained_model_path, True)
 
-    def forward(self, x, return_mos=True, return_dist=False):
+    def forward(self, x, return_mos=True, return_dist=False, semantic_embeddings=None):
         """
+        Where was it modified?
+
+        Add new parameter semantic_embedding. If it's not None, it will be passed into the TransformerEncoder as a parameter.
+
         Forward pass of the MUSIQ network.
 
         Args:
@@ -435,7 +451,7 @@ class MUSIQ(nn.Module):
         x = x.reshape(b, seq_len, -1)
         x = self.embedding(x)
         x = self.transformer_encoder(
-            x, inputs_spatial_positions, inputs_scale_positions, inputs_masks
+            x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_embeddings
         )
         q = self.head(x[:, 0])
 
