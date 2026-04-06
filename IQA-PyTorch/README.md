@@ -284,6 +284,171 @@ torchrun --nproc_per_node=2 --master_port=4321 pyiqa/train.py -opt options/train
 
 Any contributions to this repository are greatly appreciated. Please follow the [contribution instructions](docs/Instruction.md) for contribution guidance.
 
+---
+
+## 本项目修改说明（语义图像选择系统）
+
+本项目在原始 IQA-PyTorch 基础上进行了以下修改，以支持语义图像选择功能：
+
+### 修改文件
+
+**文件路径：** `pyiqa/archs/musiq_arch.py`
+
+### 修改内容
+
+#### 1. 新增 `AddSemanticEmbs` 类
+
+**位置：** 第 227-297 行
+
+**作用：** 添加可学习的语义嵌入层，与 `AddHashSpatialPositionEmbs` 和 `AddScaleEmbs` 保持一致的设计风格。
+
+```python
+class AddSemanticEmbs(nn.Module):
+    """添加可学习的语义嵌入到输入特征"""
+    
+    def __init__(self, semantic_input_dim, dim):
+        super().__init__()
+        self.semantic_proj = nn.parameter.Parameter(
+            torch.randn(dim, semantic_input_dim)
+        )
+        nn.init.normal_(self.semantic_proj, std=0.02)
+    
+    def forward(self, inputs, semantic_vectors):
+        """
+        Args:
+            inputs: 图像特征 [N, dim]
+            semantic_vectors: 语义向量 [N, K]（patch-mask 重叠率）
+        Returns:
+            inputs + e_sem [N, dim]
+        """
+        e_sem = F.linear(semantic_vectors, self.semantic_proj)
+        return inputs + e_sem
+```
+
+**参数说明：**
+- `semantic_input_dim`: 语义向量输入维度 K（mask 数量，通常为 5）
+- `dim`: 输出嵌入维度（与 MUSIQ hidden_size 一致，384）
+
+**可训练参数量：** `384 × 5 = 1920` 个参数
+
+#### 2. `TransformerEncoder` 修改
+
+**`__init__` 新增参数：**
+```python
+use_semantic=False,        # 是否启用语义功能
+semantic_input_dim=5,      # 语义向量维度
+```
+
+**`__init__` 新增代码：**
+```python
+self.use_semantic = use_semantic
+if use_semantic:
+    self.semanticembed_input = AddSemanticEmbs(
+        semantic_input_dim, input_dim
+    )
+```
+
+**`forward` 修改：**
+```python
+def forward(
+    self, x, inputs_spatial_positions, inputs_scale_positions, 
+    inputs_masks, semantic_vectors=None  # ← 改参数名
+):
+    # ... 原有代码 ...
+    
+    # 新增：语义嵌入（与 pos/scale 风格一致）
+    if self.use_semantic and semantic_vectors is not None:
+        x = self.semanticembed_input(x, semantic_vectors)
+    
+    # ... 后面代码不变 ...
+```
+
+#### 3. `MUSIQ` 类修改
+
+**`__init__` 新增参数：**
+```python
+use_semantic=False,
+semantic_input_dim=5,
+```
+
+**`__init__` 传递参数：**
+```python
+self.transformer_encoder = TransformerEncoder(
+    # ... 原有参数 ...
+    use_semantic=use_semantic,
+    semantic_input_dim=semantic_input_dim,
+)
+```
+
+**`forward` 修改：**
+```python
+def forward(self, x, return_mos=True, return_dist=False, semantic_vectors=None):
+    # ...
+    x = self.transformer_encoder(
+        x, inputs_spatial_positions, inputs_scale_positions, 
+        inputs_masks, semantic_vectors=semantic_vectors  # ← 改关键字参数
+    )
+    # ...
+```
+
+### 融合公式
+
+$$z_i = x_i + e_i^{sem} + e_i^{pos} + e_i^{scale}$$
+
+其中：
+- $x_i$: 图像特征（CNN 编码，384 维）
+- $e_i^{sem} = W_{proj} @ s_i$: 语义嵌入（384 维）
+- $e_i^{pos}$: 空间位置嵌入（查表，384 维）
+- $e_i^{scale}$: 尺度嵌入（查表，384 维）
+- $z_i$: 融合特征（384 维）→ Transformer 输入
+
+### 使用示例
+
+```python
+from pyiqa.archs.musiq_arch import MUSIQ
+
+# 创建模型（启用语义功能）
+model = MUSIQ(
+    pretrained='koniq10k',
+    use_semantic=True,
+    semantic_input_dim=5,  # K=5 个 mask
+)
+
+# 推理（传入语义向量）
+# semantic_vectors: [batch, num_patches, K]
+# 每个 patch 与 K 个 mask 的重叠率
+mos = model(patches, semantic_vectors=semantic_vectors)
+```
+
+### 向后兼容性
+
+```python
+# 默认 use_semantic=False，行为与原 MUSIQ 完全一致
+model = MUSIQ(pretrained='koniq10k')  # ✓ 正常工作
+```
+
+### 训练策略
+
+**仅训练语义投影层（1920 个参数）：**
+
+```python
+# 冻结 MUSIQ 主干（~82M 参数）
+for param in model.parameters():
+    param.requires_grad = False
+
+# 只训练语义投影层
+for name, param in model.named_parameters():
+    if 'semantic_proj' in name:
+        param.requires_grad = True
+
+# 优化器
+optimizer = torch.optim.Adam([
+    {'params': model.transformer_encoder.semanticembed_input.semantic_proj, 'lr': 1e-3}
+])
+```
+
+---
+
 ## :scroll: License
 
 This work is licensed under a [NTU S-Lab License](https://github.com/chaofengc/IQA-PyTorch/blob/main/LICENSE_NTU-S-Lab) and <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>.

@@ -213,7 +213,9 @@ class AddHashSpatialPositionEmbs(nn.Module):
 
 
 class AddScaleEmbs(nn.Module):
-    """Adds learnable scale embeddings to the inputs."""
+    """
+    向输入添加可学习的尺度嵌入。
+    """
 
     def __init__(self, num_scales, dim):
         super().__init__()
@@ -222,6 +224,25 @@ class AddScaleEmbs(nn.Module):
 
     def forward(self, inputs, inputs_scale_positions):
         return inputs + self.scale_emb[inputs_scale_positions.long()]
+
+
+class AddSemanticEmbs(nn.Module):
+    """
+    添加可学习的语义嵌入到输入特征。
+    返回映射好的e_i^sem
+    """
+
+    def __init__(self, semantic_input_dim, dim):
+        super().__init__()
+        self.semantic_proj = nn.parameter.Parameter(
+            torch.randn(dim, semantic_input_dim)
+        )
+        nn.init.normal_(self.semantic_proj, std=0.02)
+
+    def forward(self, inputs, semantic_vectors):
+        # e_sem = W_proj @ s_i
+        e_sem = F.linear(semantic_vectors, self.semantic_proj)
+        return inputs + e_sem
 
 
 class TransformerEncoder(nn.Module):
@@ -237,6 +258,9 @@ class TransformerEncoder(nn.Module):
         spatial_pos_grid_size=10,
         use_scale_emb=True,
         use_sinusoid_pos_emb=False,
+        # 新增参数
+        use_semantic=False,
+        semantic_input_dim=5,
     ):
         super().__init__()
         self.use_scale_emb = use_scale_emb
@@ -244,6 +268,13 @@ class TransformerEncoder(nn.Module):
             spatial_pos_grid_size, input_dim
         )
         self.scaleembed_input = AddScaleEmbs(num_scales, input_dim)
+        
+        # 添加语义嵌入层。
+        self.use_sematic = use_semantic;
+        if use_semantic:
+            self.semanticembed_input = AddSemanticEmbs(
+                semantic_input_dim, input_dim
+            )
 
         self.cls = nn.parameter.Parameter(torch.zeros(1, 1, input_dim))
         self.dropout = nn.Dropout(dropout_rate)
@@ -256,25 +287,17 @@ class TransformerEncoder(nn.Module):
             )
 
     def forward(
-        self, x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_embeddings=None
+        self, x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_vectors=None
     ):
-        '''
-        Where was it modified?
-
-        Add new parameter semantic_embedding. If it's not None, add it with x.
-
-        Args:
-            semantic_embeddings: The semantic vector of each patch itself
-        '''
         n, _, c = x.shape
 
         x = self.posembed_input(x, inputs_spatial_positions)
         if self.use_scale_emb:
             x = self.scaleembed_input(x, inputs_scale_positions)
 
-        # Added: Semantic embedding integration (if provided).
-        if semantic_embeddings is not None:
-            x = x + semantic_embeddings
+        # 通过语义嵌入层映射 semantic_vectors，再将其添加至 x
+        if self.use_sematic and semantic_vectors is not None:
+            x = self.semanticembed_input(x, semantic_vectors)
 
         cls_token = self.cls.repeat(n, 1, 1)
         x = torch.cat([cls_token, x], dim=1)
@@ -346,6 +369,9 @@ class MUSIQ(nn.Module):
         # data opts
         longer_side_lengths=[224, 384],
         max_seq_len_from_original_res=-1,
+        # 新增参数
+        use_semantic = False,
+        semantic_input_dim = 5
     ):
         super(MUSIQ, self).__init__()
 
@@ -392,6 +418,9 @@ class MUSIQ(nn.Module):
             spatial_pos_grid_size,
             use_scale_emb,
             use_sinusoid_pos_emb,
+            # 新增参数
+            use_semantic = use_semantic,
+            semantic_input_dim = semantic_input_dim
         )
 
         if num_class > 1:
@@ -403,9 +432,11 @@ class MUSIQ(nn.Module):
             self.head = nn.Linear(hidden_size, num_class)
 
         if pretrained_model_path is not None:
-            load_pretrained_network(self, pretrained_model_path, True)
+            # 如果启用语义功能，使用 strict=False（因为 checkpoint 里没有 semantic_proj 参数）
+            strict = not use_semantic
+            load_pretrained_network(self, pretrained_model_path, strict)
 
-    def forward(self, x, return_mos=True, return_dist=False, semantic_embeddings=None):
+    def forward(self, x, return_mos=True, return_dist=False, semantic_vectors = None):
         """
         Where was it modified?
 
@@ -450,8 +481,9 @@ class MUSIQ(nn.Module):
         x = x.permute(0, 2, 3, 1)
         x = x.reshape(b, seq_len, -1)
         x = self.embedding(x)
+        # 新增参数
         x = self.transformer_encoder(
-            x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_embeddings
+            x, inputs_spatial_positions, inputs_scale_positions, inputs_masks, semantic_vectors = semantic_vectors
         )
         q = self.head(x[:, 0])
 
