@@ -99,14 +99,13 @@ import torch
 from PIL import Image
 import torchvision.transforms as transforms
 import sem_musiq
-from semantic_musiq.semantic_vector_generator import SemanticVectorGenerator
 
 # 加载图像
 img = Image.open('image.jpg').convert('RGB')
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # 创建语义向量生成器（使用 SAM）
-sem_generator = SemanticVectorGenerator(
+sem_generator = sem_musiq.SemanticVectorGenerator(
     sam_checkpoint='sam_vit_b_01ec64.pth',
     top_k=5,  # 使用 5 个语义 mask
     device=device,
@@ -402,6 +401,110 @@ img_tensor = img_tensor.half().cuda()
 with torch.no_grad():
     score = model(img_tensor)
 ```
+
+### Q6: 如何使用端到端的融合模型？
+
+A: 使用 `SemMUSIQFusion` 类，一行代码完成全部流程：
+```python
+import sem_musiq
+
+model = sem_musiq.SemMUSIQFusion(
+    musiq_pretrained='koniq10k',
+    sam_checkpoint='sam_vit_b.pth',
+    top_k=5,
+)
+
+result = model.predict('image.jpg')
+print(f"质量分数：{result['quality_score']}")
+print(f"语义一致性：{result['sim_score']}")
+print(f"融合分数：{result['final_score']}")
+```
+
+### Q7: 如何训练融合权重？
+
+A: 使用 `train_fusion_only()` 方法，仅训练融合参数（冻结 MUSIQ 和 SAM）：
+```python
+# 准备你的数据集
+dataloader = your_data_loader  # 每个 batch 包含 'image' 和 'mos'
+
+# 训练
+model.train_fusion_only(
+    dataloader=dataloader,
+    criterion=torch.nn.MSELoss(),
+    optimizer=torch.optim.Adam(model.fusion.parameters(), lr=0.01),
+    num_epochs=10,
+)
+
+# 查看训练后的权重
+lambda_q, lambda_sim = model.get_current_weights()
+print(f"训练后权重：Q={lambda_q:.4f}, SIM={lambda_sim:.4f}")
+```
+
+---
+
+## 高级 API
+
+### `sem_musiq.SemMUSIQFusion`
+
+端到端融合模型，整合 SAM、MUSIQ 和可学习融合权重。
+
+#### 参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `musiq_pretrained` | str | 'koniq10k' | MUSIQ 预训练模型 |
+| `sam_checkpoint` | str | None | SAM 模型权重路径 |
+| `top_k` | int | 5 | SAM mask 数量 |
+| `lambda_q_init` | float | 0.7 | 质量分数初始权重 |
+| `device` | str | None | 运行设备 |
+
+#### 方法
+
+**`predict(image, return_details=False)`**
+
+端到端预测。
+
+- **参数**：
+  - `image`: 输入图像（路径、PIL 或 numpy）
+  - `return_details`: 是否返回详细信息
+
+- **返回**：
+  - dict，包含 quality_score, sim_score, final_score, weights
+
+**`forward(img_tensor, semantic_vectors, sim_score, return_all=True)`**
+
+前向传播（需要预先生成语义向量）。
+
+**`train_fusion_only(dataloader, criterion, optimizer, num_epochs)`**
+
+仅训练融合权重（冻结 MUSIQ 和 SAM）。
+
+**`get_current_weights()`**
+
+获取当前融合权重。
+
+---
+
+### `sem_musiq.QualityScoreFusion`
+
+可学习的分数融合模块（独立组件）。
+
+#### 参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `lambda_q_init` | float | 0.7 | 质量分数初始权重 |
+| `lambda_sim_init` | float | 0.3 | 语义分数初始权重 |
+
+#### 方法
+
+**`forward(quality_score, sim_score)`**
+
+融合分数。
+
+**`get_weights()`**
+
+返回当前权重值。
 
 ---
 

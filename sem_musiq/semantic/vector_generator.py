@@ -19,7 +19,7 @@
     loaded = generator.load_from_pickle("output/result.pkl")
 
     # 方式 2: 使用便捷函数
-    from semantic_musiq.semantic_vector_generator import generate_semantic_vectors
+    from sem_musiq.semantic.vector_generator import generate_semantic_vectors
     result = generate_semantic_vectors("image.jpg", sam_checkpoint="sam_vit_b.pth", save_path="output/result.pkl")
 """
 
@@ -39,7 +39,7 @@ except ImportError:
     print("警告：未安装 segment_anything，SAM 功能不可用")
 
 # 从 sem_musiq 导入多尺度处理函数
-from sem_musiq.data.multiscale_trans_util import get_multiscale_patches, resize_preserve_aspect_ratio
+from ..data.multiscale_trans_util import get_multiscale_patches, resize_preserve_aspect_ratio
 
 
 class SemanticVectorGenerator:
@@ -412,39 +412,39 @@ class SemanticVectorGenerator:
             raise TypeError(f"不支持的图像类型：{type(image)}")
 
         orig_w, orig_h = img_pil.size
-        print(f"图像尺寸：{orig_w} × {orig_h}")
+        # print(f"图像尺寸：{orig_w} × {orig_h}")
 
         # 2. 生成 SAM mask
-        print("生成 SAM mask...")
+        # print("生成 SAM mask...")
         sam_result = self._generate_sam_masks(img_np)
         masks = sam_result['masks']  # [K, H, W]
         mask_scores = sam_result['scores']  # [K]
-        print(f"  生成 {len(masks)} 个 mask")
+        # print(f"  生成 {len(masks)} 个 mask")
 
         # 3. 计算 patch-mask 重叠率
-        print("计算 patch-mask 重叠率...")
+        # print("计算 patch-mask 重叠率...")
         overlap_result = self._compute_patch_mask_overlap(masks, orig_w, orig_h)
         semantic_vectors = overlap_result['semantic_vectors']
         scale_info = overlap_result['scale_info']
 
         # 4. 检查并 padding 语义向量到 target_dim
-        print(f"检查语义向量维度（target={self.top_k}）...")
+        # print(f"检查语义向量维度（target={self.top_k}）...")
         actual_k = semantic_vectors[0].shape[1]
         if actual_k < self.top_k:
-            print(f"  Padding 语义向量：{actual_k} -> {self.top_k}")
+            # print(f"  Padding 语义向量：{actual_k} -> {self.top_k}")
             semantic_vectors = self._pad_semantic_vectors(semantic_vectors, self.top_k)
-        else:
-            print(f"  语义向量维度正确：K={actual_k}")
+        # else:
+        #     print(f"  语义向量维度正确：K={actual_k}")
 
         total_patches = sum(sv.shape[0] for sv in semantic_vectors)
-        print(f"  总计 {total_patches} 个 patch，语义向量维度 K={self.top_k}")
+        # print(f"  总计 {total_patches} 个 patch，语义向量维度 K={self.top_k}")
 
         # 4. 计算一致性分数
-        print("计算跨尺度一致性分数...")
+        # print("计算跨尺度一致性分数...")
         consistency_result = self._compute_consistency_score(semantic_vectors)
         consistency_score = consistency_result['consistency_score']
         similarity_matrix = consistency_result['similarity_matrix']
-        print(f"  一致性分数 SIM = {consistency_score:.4f}")
+        # print(f"  一致性分数 SIM = {consistency_score:.4f}")
 
         # 5. 组装结果
         result = {
