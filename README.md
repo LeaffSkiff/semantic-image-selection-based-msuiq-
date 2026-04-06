@@ -1,4 +1,4 @@
-# 基于 MUSIQ 的语义图像选择系统 (Semantic Image Selection based on MUSIQ)
+# 基于 MUSIQ 的语义图像评估系统 (Semantic Image Selection based on MUSIQ)
 
 ## 项目简介
 
