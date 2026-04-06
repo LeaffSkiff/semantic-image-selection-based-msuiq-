@@ -8,22 +8,11 @@
 
 ```
 semantic-image-selection-based-msuiq/
-├── IQA-PyTorch/                 # PyTorch 图像质量评估工具箱
+├── IQA-PyTorch/                 # pyiqa，仅保留了 musiq
 │   └── pyiqa/
 │       └── archs/
-│           └── musiq_arch.py    # 修改：添加语义嵌入功能
-├── datasets/
-│   └── KonIQ-10k/               # KonIQ-10k 数据集
-├── tutorials/                   # 学习教程（分阶段示例）
-│   ├── 01_patch_visualization/
-│   ├── 02_sam_generation/
-│   ├── 03_overlap_computation/
-│   ├── 04_semantic_embedding/
-│   ├── 05_semantic_fusion/
-│   └── 06_cross_scale_consistency/
-├── docs/                        # 文档
-│   ├── 改进方案.md
-│   └── 改进方案 v2.md
+│           └── musiq_arch.py    # 添加语义嵌入功能
+├── semantic_musiq/              # 语义向量提取器
 └── README.md
 ```
 
@@ -36,6 +25,11 @@ semantic-image-selection-based-msuiq/
 
 ## 快速开始
 
+```bash
+# 开始试用前，请现在 IQA-PyTorch 文件夹下执行命令以安装修改后的 pyiqa
+pip install -e .
+```
+
 ```python
 import pyiqa
 
@@ -45,7 +39,3 @@ model = pyiqa.create_metric("musiq", device="cuda")
 # 评估图像质量（输出 0-100 分数）
 score = model(image_path)
 ```
-
----
-
-# IQA-PyTorch 原始文档
