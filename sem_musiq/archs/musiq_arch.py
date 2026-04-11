@@ -205,46 +205,67 @@ class AddScaleEmbs(nn.Module):
         return inputs + self.scale_emb[inputs_scale_positions.long()]
 
 
-class AddSemanticEmbs(nn.Module):
+class CatSemanticEmbs(nn.Module):
     """
-    Semantic embeddings for patch-mask overlap features.
+    Semantic embeddings for concatenation with spatial features.
 
-    Projects semantic vectors (patch-mask overlap ratios) to the same
-    dimension as the transformer input features.
+    将语义嵌入与空间特征进行 cat 拼接，然后投影回原维度。
+
+    输入：
+        - inputs: [B, N, D_spatial] - 空间特征
+        - semantic_vectors: [B, N, D_semantic] - 语义嵌入
+    输出：
+        - [B, N, D_spatial] - 融合后的特征（维度不变）
     """
 
-    def __init__(self, semantic_input_dim, dim):
+    def __init__(self, spatial_dim: int, semantic_dim: int):
         super().__init__()
-        self.semantic_proj = nn.Parameter(torch.randn(dim, semantic_input_dim))
-        nn.init.normal_(self.semantic_proj, std=0.02)
+        # 融合投影层：[D_spatial + D_semantic] -> [D_spatial]
+        self.fusion_proj = nn.Linear(spatial_dim + semantic_dim, spatial_dim)
 
     def forward(self, inputs, semantic_vectors):
-        # e_sem = W_proj @ s_i
-        e_sem = F.linear(semantic_vectors, self.semantic_proj)
-        return inputs + e_sem
+        # cat 拼接：[B, N, D_spatial + D_semantic]
+        cat_features = torch.cat([inputs, semantic_vectors], dim=-1)
+        # 投影回原维度：[B, N, D_spatial]
+        return self.fusion_proj(cat_features)
 
 
 class TransformerEncoder(nn.Module):
     """
     Transformer encoder with optional semantic embeddings.
+
+    支持 cat 拼接语义嵌入到空间特征，通过投影层保持维度不变。
     """
 
     def __init__(self, input_dim, mlp_dim=1152, attention_dropout_rate=0.0,
                  dropout_rate=0, num_heads=6, num_layers=14, num_scales=3,
                  spatial_pos_grid_size=10, use_scale_emb=True,
-                 use_semantic=False, semantic_input_dim=5):
+                 use_semantic=False, semantic_input_dim=0):
+        """
+        Args:
+            input_dim: 空间特征维度（D_spatial），也是 Transformer 的维度
+            semantic_input_dim: 语义嵌入维度（D_semantic），0 表示不使用
+        """
         super().__init__()
         self.use_scale_emb = use_scale_emb
+        self.use_semantic = use_semantic
+
+        # Transformer 维度始终是 input_dim（为了兼容预训练权重）
+        self.transformer_dim = input_dim
+
         self.posembed_input = AddHashSpatialPositionEmbs(
             spatial_pos_grid_size, input_dim
         )
         self.scaleembed_input = AddScaleEmbs(num_scales, input_dim)
 
-        self.use_semantic = use_semantic
-        if use_semantic:
-            self.semanticembed_input = AddSemanticEmbs(
-                semantic_input_dim, input_dim
+        # cat 拼接 + 投影层（如果启用语义）
+        if use_semantic and semantic_input_dim > 0:
+            self.semanticembed_input = CatSemanticEmbs(
+                spatial_dim=input_dim,
+                semantic_dim=semantic_input_dim,
             )
+        else:
+            self.semanticembed_input = None
 
         self.cls = nn.Parameter(torch.zeros(1, 1, input_dim))
         self.dropout = nn.Dropout(dropout_rate)
@@ -264,7 +285,7 @@ class TransformerEncoder(nn.Module):
         if self.use_scale_emb:
             x = self.scaleembed_input(x, inputs_scale_positions)
 
-        # Add semantic embeddings if available
+        # Cat semantic embeddings if available
         if self.use_semantic and semantic_vectors is not None:
             x = self.semanticembed_input(x, semantic_vectors)
 

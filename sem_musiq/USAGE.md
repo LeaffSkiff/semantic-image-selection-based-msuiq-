@@ -92,7 +92,7 @@ with torch.no_grad():
 print(f"MUSIQ 分数：{score.item():.4f}")
 ```
 
-### 2. 使用语义嵌入
+### 2. 使用语义特征（双分支完整流程）
 
 ```python
 import torch
@@ -104,43 +104,42 @@ import sem_musiq
 img = Image.open('image.jpg').convert('RGB')
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# 创建语义向量生成器（使用 SAM）
-sem_generator = sem_musiq.SemanticVectorGenerator(
+# 1. 提取 SAM 特征
+sam_extractor = sem_musiq.SAMFeatureExtractor(
     sam_checkpoint='sam_vit_b_01ec64.pth',
-    top_k=5,  # 使用 5 个语义 mask
     device=device,
 )
+sam_result = sam_extractor(img, return_details=False)
+sam_embeddings = sam_result['sam_embeddings']  # List[np.ndarray], 每个 [N_s, 256]
 
-# 生成语义向量
-result = sem_generator(img, return_details=False)
-semantic_vectors = result['semantic_vectors']  # List[np.ndarray]
-sim_score = result['consistency_score']  # 跨尺度一致性分数
-
-# 拼接各尺度的语义向量
-import numpy as np
-all_semantic_vectors = np.concatenate(semantic_vectors, axis=0)  # [N_patches, K]
-semantic_tensor = torch.from_numpy(all_semantic_vectors).float().unsqueeze(0).to(device)
-
-# 创建 MUSIQ 模型（启用语义嵌入）
-model = sem_musiq.MUSIQ(
-    pretrained='koniq10k',
-    use_semantic=True,
-    semantic_input_dim=5,  # 与 top_k 一致
+# 2. 语义编码和一致性打分
+semantic_encoder = sem_musiq.SemanticTransformerEncoder(
+    input_dim=256,
+    output_dim=384,
+    num_scales=3,
 )
+consistency_scorer = sem_musiq.SemanticConsistencyScorer(num_scales=3)
+
+# 编码语义特征
+semantic_embeds = semantic_encoder(sam_embeddings)
+
+# 计算一致性分数
+sim_score = consistency_scorer(semantic_embeds)
+
+# 3. MUSIQ 质量预测
+model = sem_musiq.MUSIQ(pretrained='koniq10k')
 model.to(device)
 model.eval()
 
-# 转换为 tensor
 img_tensor = transforms.ToTensor()(img).unsqueeze(0).to(device)
 
-# 推理（传入语义向量）
 with torch.no_grad():
-    quality_score = model(img_tensor, semantic_vectors=semantic_tensor)
+    quality_score = model(img_tensor)
 
 print(f"质量分数 Q = {quality_score.item():.4f}")
 print(f"语义一致性 SIM = {sim_score:.4f}")
 
-# 融合分数
+# 4. 融合分数
 final_score = 0.7 * quality_score.item() + 0.3 * (sim_score * 100)
 print(f"最终分数 F = {final_score:.4f}")
 ```
@@ -206,11 +205,9 @@ print(f"批量分数：{scores.cpu().numpy()}")
 """
 
 import torch
-import numpy as np
 from PIL import Image
 import torchvision.transforms as transforms
 import sem_musiq
-from semantic_musiq.semantic_vector_generator import SemanticVectorGenerator
 
 def evaluate_image(image_path, sam_checkpoint=None, lambda_q=0.7):
     """
@@ -248,14 +245,25 @@ def evaluate_image(image_path, sam_checkpoint=None, lambda_q=0.7):
     result['quality_score'] = q_score.item()
     
     # 2. 语义一致性分析（如果有 SAM）
-    if sam_checkpoint and os.path.exists(sam_checkpoint):
-        sem_gen = SemanticVectorGenerator(
+    if sam_checkpoint:
+        sam_extractor = sem_musiq.SAMFeatureExtractor(
             sam_checkpoint=sam_checkpoint,
-            top_k=5,
             device=device,
         )
-        sem_result = sem_gen(img, return_details=False)
-        result['sim_score'] = sem_result['consistency_score']
+        sam_result = sam_extractor(img, return_details=False)
+        sam_embeddings = sam_result['sam_embeddings']
+        
+        # 语义编码
+        semantic_encoder = sem_musiq.SemanticTransformerEncoder(
+            input_dim=256,
+            output_dim=384,
+            num_scales=3,
+        )
+        semantic_embeds = semantic_encoder(sam_embeddings)
+        
+        # 一致性打分
+        consistency_scorer = sem_musiq.SemanticConsistencyScorer(num_scales=3)
+        result['sim_score'] = consistency_scorer(semantic_embeds)
         
         # 3. 融合分数
         sim_normalized = result['sim_score'] * 100
@@ -368,18 +376,17 @@ model = sem_musiq.MUSIQ(
 )
 ```
 
-### Q3: 语义向量如何生成？
+### Q3: 如何提取语义特征？
 
-A: 使用 `semantic_musiq.semantic_vector_generator.SemanticVectorGenerator`：
+A: 使用 `sem_musiq.SAMFeatureExtractor`：
 ```python
-from semantic_musiq.semantic_vector_generator import SemanticVectorGenerator
+from sem_musiq import SAMFeatureExtractor
 
-generator = SemanticVectorGenerator(
+extractor = SAMFeatureExtractor(
     sam_checkpoint='sam_vit_b.pth',
-    top_k=5,
 )
-result = generator(image_path)
-semantic_vectors = result['semantic_vectors']
+result = extractor(image_path)
+sam_embeddings = result['sam_embeddings']  # List[np.ndarray], 每个 [N_s, 256]
 ```
 
 ### Q4: 如何在 CPU 上运行？
@@ -454,7 +461,8 @@ print(f"训练后权重：Q={lambda_q:.4f}, SIM={lambda_sim:.4f}")
 |--------|------|--------|------|
 | `musiq_pretrained` | str | 'koniq10k' | MUSIQ 预训练模型 |
 | `sam_checkpoint` | str | None | SAM 模型权重路径 |
-| `top_k` | int | 5 | SAM mask 数量 |
+| `semantic_transformer_layers` | int | 6 | 语义 Transformer 层数 |
+| `semantic_output_dim` | int | 384 | 语义嵌入输出维度 |
 | `lambda_q_init` | float | 0.7 | 质量分数初始权重 |
 | `device` | str | None | 运行设备 |
 
@@ -471,9 +479,9 @@ print(f"训练后权重：Q={lambda_q:.4f}, SIM={lambda_sim:.4f}")
 - **返回**：
   - dict，包含 quality_score, sim_score, final_score, weights
 
-**`forward(img_tensor, semantic_vectors, sim_score, return_all=True)`**
+**`forward(img_tensor, sam_embeddings, sim_score, return_all=True)`**
 
-前向传播（需要预先生成语义向量）。
+前向传播（需要预先提取 SAM 特征）。
 
 **`train_fusion_only(dataloader, criterion, optimizer, num_epochs)`**
 
@@ -482,6 +490,60 @@ print(f"训练后权重：Q={lambda_q:.4f}, SIM={lambda_sim:.4f}")
 **`get_current_weights()`**
 
 获取当前融合权重。
+
+---
+
+### `sem_musiq.SAMFeatureExtractor`
+
+SAM 特征提取器，提取多尺度 patch 的语义 embedding。
+
+#### 参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `sam_checkpoint` | str | None | SAM 模型权重路径 |
+| `sam_model_type` | str | 'vit_b' | SAM 模型类型 |
+| `device` | str | None | 运行设备 |
+| `scale_longer_sides` | list | [224, 384, 512] | 各尺度长边长度 |
+
+#### 方法
+
+**`__call__(image, return_details=False)`**
+
+提取 SAM 特征。
+
+- **返回**：
+  - `sam_embeddings`: List[np.ndarray] - 各尺度 embedding [N_s, 256]
+  - `scale_info`: List[Dict] - 各尺度信息
+
+---
+
+### `sem_musiq.SemanticTransformerEncoder`
+
+语义 Transformer 编码器，将 SAM embedding 投影到 Transformer 特征空间。
+
+#### 参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `input_dim` | int | 256 | 输入维度（SAM ViT-B 输出） |
+| `output_dim` | int | 384 | 输出维度（与 MUSIQ hidden_size 对齐） |
+| `num_layers` | int | 6 | Transformer 层数 |
+| `num_scales` | int | 3 | 尺度数量 |
+
+---
+
+### `sem_musiq.SemanticConsistencyScorer`
+
+语义一致性打分器，计算同尺度内 patch 之间的余弦相似度。
+
+#### 参数
+
+| 参数名 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `num_scales` | int | 3 | 尺度数量 |
+| `similarity_type` | str | 'mean' | 相似度聚合方式 |
+| `temperature` | float | 1.0 | 温度参数 |
 
 ---
 
