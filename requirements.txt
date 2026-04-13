@@ -1,0 +1,16 @@
+# 基础深度学习框架
+torch>=2.0.0
+torchvision>=0.15.0
+
+# 图像处理
+Pillow>=9.0.0
+numpy>=1.21.0
+
+# 模型下载
+huggingface_hub>=0.10.0
+
+# 工具库
+tqdm>=4.62.0
+
+# SAM (Segment Anything)
+segment-anything>=1.0
